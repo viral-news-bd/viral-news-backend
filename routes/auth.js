@@ -14,22 +14,18 @@ router.post('/register', async (req, res) => {
   try {
     const { name, email, password } = req.body;
 
-    // 1. Basic validation
     if (!name || !email || !password) {
       return res.status(400).json({ message: 'সব ফিল্ড পূরণ করা আবশ্যক' });
     }
 
-    // 2. Check if user already exists
     const existingUser = await User.findOne({ email });
     if (existingUser) {
       return res.status(400).json({ message: 'এই ইমেইল ইতিমধ্যে ব্যবহৃত' });
     }
 
-    // 3. Hash password
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
-    // 4. Create user
     const user = new User({
       name,
       email,
@@ -38,16 +34,16 @@ router.post('/register', async (req, res) => {
 
     await user.save();
 
-    // 5. (Optional) Create JWT on register
-    const payload = { userId: user._id };
-    const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '7d' });
+    const token = jwt.sign(
+      { userId: user._id },
+      process.env.JWT_SECRET,
+      { expiresIn: '7d' }
+    );
 
-    // 6. Response
     res.status(201).json({
       message: 'রেজিস্ট্রেশন সফল হয়েছে',
       token
     });
-
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: 'Server error' });
@@ -56,11 +52,54 @@ router.post('/register', async (req, res) => {
 
 /**
  * @route   POST /api/auth/login
- * @desc    Login user (temporary stub)
+ * @desc    Login user
  * @access  Public
  */
 router.post('/login', async (req, res) => {
-  res.json({ message: 'Login route working' });
+  try {
+    const { email, password } = req.body;
+
+    // 1. Validate
+    if (!email || !password) {
+      return res.status(400).json({ message: 'ইমেইল ও পাসওয়ার্ড দিন' });
+    }
+
+    // 2. Find user
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(400).json({ message: 'ভুল ইমেইল বা পাসওয়ার্ড' });
+    }
+
+    // 3. Compare password
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) {
+      return res.status(400).json({ message: 'ভুল ইমেইল বা পাসওয়ার্ড' });
+    }
+
+    // 4. Create JWT
+    const token = jwt.sign(
+      { userId: user._id },
+      process.env.JWT_SECRET,
+      { expiresIn: '7d' }
+    );
+
+    // 5. Respond with user info + premium status
+    res.json({
+      message: 'লগইন সফল হয়েছে',
+      token,
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        isPremium: user.isPremium,
+        premiumExpiresAt: user.premiumExpiresAt
+      }
+    });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Server error' });
+  }
 });
 
 module.exports = router;
