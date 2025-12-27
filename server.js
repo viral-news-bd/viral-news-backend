@@ -1,29 +1,55 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
 const connectDB = require('./config/db');
 
 const app = express();
 
 /* =======================
-   Database Connection
+   Database
 ======================= */
 connectDB();
 
 /* =======================
-   Middleware
+   Security Middleware
 ======================= */
 
-// Allow only specific origins (adjust later)
+// Basic security headers
+app.use(helmet());
+
+// CORS (adjust domain later)
 app.use(
   cors({
-    origin: '*', // later: ['https://yourdomain.com']
+    origin: '*',
     methods: ['GET', 'POST', 'PUT', 'DELETE'],
     allowedHeaders: ['Content-Type', 'Authorization']
   })
 );
 
-app.use(express.json());
+// Limit JSON payload size (DoS protection)
+app.use(express.json({ limit: '10kb' }));
+
+/* =======================
+   Rate Limiting
+======================= */
+
+// Global rate limit (all APIs)
+const globalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100,                // 100 requests per IP
+  message: { message: 'Too many requests, try again later' }
+});
+
+// Strict rate limit for auth routes
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10, // max 10 login/register attempts
+  message: { message: 'Too many login attempts, try again later' }
+});
+
+app.use(globalLimiter);
 
 /* =======================
    Health Check
@@ -35,7 +61,10 @@ app.get('/', (req, res) => {
 /* =======================
    Routes
 ======================= */
-app.use('/api/auth', require('./routes/auth'));
+
+// Apply strict limiter only on auth routes
+app.use('/api/auth', authLimiter, require('./routes/auth'));
+
 app.use('/api/premium', require('./routes/premium'));
 
 /* =======================
@@ -54,7 +83,7 @@ app.use((err, req, res, next) => {
 });
 
 /* =======================
-   Server Start
+   Server
 ======================= */
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
